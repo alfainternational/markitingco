@@ -1,0 +1,748 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTHENTICATION & USERS
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  phone         String?
+  role          UserRole  @default(CLIENT)
+  status        UserStatus @default(ACTIVE)
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  organizations OrganizationMember[]
+  projects      Project[] @relation("ProjectAssignee")
+  createdProjects Project[] @relation("ProjectCreator")
+  tasks         Task[] @relation("TaskAssignee")
+  createdTasks  Task[] @relation("TaskCreator")
+  contentItems  ContentItem[]
+  reports       Report[]
+  messages      Message[]
+  notifications Notification[]
+  proposals     Proposal[]
+  auditLogs     AuditLog[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  AGENCY_MANAGER
+  ACCOUNT_MANAGER
+  CONTENT_CREATOR
+  ANALYST
+  CLIENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================
+// ORGANIZATIONS (CLIENTS)
+// ============================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  industry    String?
+  website     String?
+  description String?  @db.Text
+  logoUrl     String?
+
+  // Contact & Billing
+  billingEmail String?
+  phone        String?
+  taxId        String?
+  address      Json?
+
+  // Plan & Status
+  planType    PlanType @default(STARTER)
+  status      OrganizationStatus @default(ACTIVE)
+
+  // Settings
+  settings    Json?
+
+  // Relations
+  members     OrganizationMember[]
+  projects    Project[]
+  invoices    Invoice[]
+  proposals   Proposal[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+  @@index([status])
+  @@map("organizations")
+}
+
+enum PlanType {
+  STARTER
+  GROWTH
+  ENTERPRISE
+  CUSTOM
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MemberRole @default(MEMBER)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+// ============================================
+// PROJECTS & CAMPAIGNS
+// ============================================
+
+model Project {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  slug           String
+  description    String?  @db.Text
+  type           ProjectType
+  status         ProjectStatus @default(ACTIVE)
+
+  // Budget & Timeline
+  budget         Float?
+  currency       String   @default("USD")
+  startDate      DateTime?
+  endDate        DateTime?
+
+  // Assignment
+  assignedTeam   Json?
+
+  // Metadata
+  metadata       Json?
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedUsers  User[] @relation("ProjectAssignee")
+  createdBy      User @relation("ProjectCreator", fields: [createdById], references: [id])
+  createdById    String
+  campaigns      Campaign[]
+  tasks          Task[]
+  contentItems   ContentItem[]
+  analytics      AnalyticsData[]
+  reports        Report[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([status])
+  @@map("projects")
+}
+
+enum ProjectType {
+  SEO
+  PPC
+  SOCIAL_MEDIA
+  CONTENT_MARKETING
+  EMAIL_MARKETING
+  BRANDING
+  WEB_DEVELOPMENT
+  COMPREHENSIVE
+}
+
+enum ProjectStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+  ARCHIVED
+}
+
+model Campaign {
+  id            String   @id @default(cuid())
+  projectId     String
+  name          String
+  platform      CampaignPlatform
+  objective     String?
+  description   String?  @db.Text
+
+  // Budget
+  budgetDaily   Float?
+  budgetTotal   Float?
+  currency      String   @default("USD")
+
+  // Status & Timeline
+  status        CampaignStatus @default(DRAFT)
+  startDate     DateTime?
+  endDate       DateTime?
+
+  // Performance Metrics
+  metrics       Json?
+
+  // Platform-specific data
+  platformData  Json?
+
+  // Relations
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contentItems  ContentItem[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([platform])
+  @@index([status])
+  @@map("campaigns")
+}
+
+enum CampaignPlatform {
+  GOOGLE_ADS
+  GOOGLE_DISPLAY
+  FACEBOOK
+  INSTAGRAM
+  LINKEDIN
+  TWITTER
+  TIKTOK
+  SNAPCHAT
+  YOUTUBE
+  EMAIL
+  OTHER
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+// ============================================
+// TASKS & WORKFLOW
+// ============================================
+
+model Task {
+  id          String   @id @default(cuid())
+  projectId   String
+  title       String
+  description String?  @db.Text
+  status      TaskStatus @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+
+  // Assignment
+  assignedToId String?
+  assignedTo   User? @relation("TaskAssignee", fields: [assignedToId], references: [id])
+
+  // Timeline
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  // Metadata
+  tags        String[]
+  attachments Json?
+
+  // Relations
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy   User @relation("TaskCreator", fields: [createdById], references: [id])
+  createdById String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([assignedToId])
+  @@index([status])
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  BLOCKED
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ============================================
+// CONTENT MANAGEMENT
+// ============================================
+
+model ContentItem {
+  id            String   @id @default(cuid())
+  projectId     String
+  campaignId    String?
+  type          ContentType
+  title         String
+  content       String?  @db.Text
+  status        ContentStatus @default(DRAFT)
+
+  // Publishing
+  platform      String?
+  scheduledDate DateTime?
+  publishedDate DateTime?
+  publishedUrl  String?
+
+  // Media & Assets
+  media         Json?
+  assets        Json?
+
+  // Performance
+  metrics       Json?
+
+  // SEO
+  seoMetadata   Json?
+
+  // Relations
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  campaign      Campaign? @relation(fields: [campaignId], references: [id])
+  createdBy     User @relation(fields: [createdById], references: [id])
+  createdById   String
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([campaignId])
+  @@index([status])
+  @@map("content_items")
+}
+
+enum ContentType {
+  BLOG_POST
+  SOCIAL_POST
+  EMAIL
+  AD_COPY
+  VIDEO_SCRIPT
+  INFOGRAPHIC
+  EBOOK
+  WHITEPAPER
+  CASE_STUDY
+  OTHER
+}
+
+enum ContentStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+// ============================================
+// ANALYTICS & REPORTING
+// ============================================
+
+model AnalyticsData {
+  id          String   @id @default(cuid())
+  projectId   String
+  date        DateTime
+  platform    String
+  metricType  String
+  metricValue Float
+  dimensions  Json?
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  syncedAt    DateTime @default(now())
+
+  @@index([projectId, date])
+  @@index([platform])
+  @@map("analytics_data")
+}
+
+model Report {
+  id            String   @id @default(cuid())
+  projectId     String
+  title         String
+  type          ReportType
+  periodStart   DateTime
+  periodEnd     DateTime
+
+  // Report Data
+  data          Json
+  summary       String?  @db.Text
+
+  // Files
+  pdfUrl        String?
+
+  // Delivery
+  status        ReportStatus @default(DRAFT)
+  sentAt        DateTime?
+
+  // Relations
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  generatedBy   User @relation(fields: [generatedById], references: [id])
+  generatedById String
+
+  generatedAt   DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([projectId])
+  @@map("reports")
+}
+
+enum ReportType {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  CUSTOM
+}
+
+enum ReportStatus {
+  DRAFT
+  GENERATED
+  SENT
+  ARCHIVED
+}
+
+// ============================================
+// FINANCIAL MANAGEMENT
+// ============================================
+
+model Invoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  invoiceNumber  String   @unique
+  amount         Float
+  currency       String   @default("USD")
+  status         InvoiceStatus @default(DRAFT)
+
+  // Timeline
+  dueDate        DateTime
+  paidDate       DateTime?
+
+  // Details
+  lineItems      Json
+  notes          String?  @db.Text
+
+  // Files
+  pdfUrl         String?
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments       Payment[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  amount        Float
+  currency      String   @default("USD")
+  method        PaymentMethod
+  transactionId String?
+  status        PaymentStatus
+
+  // Gateway Data
+  gatewayData   Json?
+
+  // Relations
+  invoice       Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  processedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+enum PaymentMethod {
+  STRIPE
+  PAYPAL
+  BANK_TRANSFER
+  CASH
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ============================================
+// SERVICES & PROPOSALS
+// ============================================
+
+model Service {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  description   String?  @db.Text
+  category      ServiceCategory
+  pricingModel  PricingModel
+  basePrice     Float?
+  features      Json?
+  isActive      Boolean  @default(true)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+  @@map("services")
+}
+
+enum ServiceCategory {
+  SEO
+  PPC
+  SOCIAL_MEDIA
+  CONTENT_MARKETING
+  EMAIL_MARKETING
+  BRANDING
+  WEB_DEVELOPMENT
+  CONSULTING
+  ANALYTICS
+}
+
+enum PricingModel {
+  FIXED
+  HOURLY
+  RETAINER
+  PERFORMANCE
+  CUSTOM
+}
+
+model Proposal {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  description    String?  @db.Text
+  services       Json
+  totalAmount    Float
+  currency       String   @default("USD")
+  status         ProposalStatus @default(DRAFT)
+
+  // Timeline
+  validUntil     DateTime
+  sentAt         DateTime?
+  acceptedAt     DateTime?
+  rejectedAt     DateTime?
+
+  // Files
+  pdfUrl         String?
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User @relation(fields: [createdById], references: [id])
+  createdById    String
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("proposals")
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+// ============================================
+// COMMUNICATION
+// ============================================
+
+model Conversation {
+  id          String   @id @default(cuid())
+  title       String?
+  type        ConversationType @default(DIRECT)
+  participants Json
+  lastMessageAt DateTime?
+
+  messages    Message[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("conversations")
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
+  PROJECT
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String   @db.Text
+  attachments    Json?
+  readBy         Json?
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User @relation(fields: [senderId], references: [id])
+
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String   @db.Text
+  link      String?
+  data      Json?
+  readAt    DateTime?
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+// ============================================
+// AUDIT & LOGGING
+// ============================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String
+  changes     Json?
+  ipAddress   String?
+  userAgent   String?
+
+  user        User? @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
