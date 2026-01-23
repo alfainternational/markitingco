@@ -50,13 +50,16 @@ model User {
 }
 
 enum UserRole {
-  SUPER_ADMIN
-  ADMIN
-  AGENCY_MANAGER
-  ACCOUNT_MANAGER
-  CONTENT_CREATOR
-  ANALYST
-  CLIENT
+  SUPER_ADMIN      // مالك النظام - System Owner
+  ADMIN            // مدير عام - General Manager
+  AGENCY_MANAGER   // مدير قسم - Department Manager
+  ACCOUNT_MANAGER  // مدير حسابات - Account Manager
+  CONTENT_CREATOR  // منشئ محتوى - Content Creator
+  ANALYST          // محلل - Analyst
+  DESIGNER         // مصمم - Designer
+  DEVELOPER        // مطور - Developer
+  COPYWRITER       // كاتب محتوى - Copywriter
+  CLIENT           // عميل - Client
 }
 
 enum UserStatus {
@@ -745,4 +748,350 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ============================================
+// SERVICES CATALOG & PACKAGES
+// ============================================
+
+model Package {
+  id              String   @id @default(cuid())
+  name            String
+  nameAr          String?
+  slug            String   @unique
+  description     String?  @db.Text
+  descriptionAr   String?  @db.Text
+
+  // Pricing
+  price           Float
+  currency        String   @default("USD")
+  billingCycle    BillingCycle @default(MONTHLY)
+
+  // Package Details
+  features        Json     // Array of feature objects
+  services        Json     // Array of included service IDs and configurations
+
+  // Limitations
+  maxProjects     Int?
+  maxUsers        Int?
+  maxCampaigns    Int?
+  storageLimit    Int?     // in GB
+
+  // Support
+  supportLevel    SupportLevel @default(BASIC)
+
+  // Status
+  isActive        Boolean  @default(true)
+  isPopular       Boolean  @default(false)
+  displayOrder    Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("packages")
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUAL
+  ANNUAL
+  ONE_TIME
+}
+
+enum SupportLevel {
+  BASIC        // Email support (24-48h response)
+  PRIORITY     // Email + Chat (4-8h response)
+  PREMIUM      // 24/7 Phone + Email + Chat (1h response)
+  DEDICATED    // Dedicated account manager
+}
+
+// ============================================
+// TEAM & DEPARTMENTS
+// ============================================
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  nameAr      String?
+  slug        String   @unique
+  description String?  @db.Text
+  type        DepartmentType
+
+  // Hierarchy
+  parentId    String?
+  parent      Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children    Department[] @relation("DepartmentHierarchy")
+
+  // Leadership
+  managerId   String?
+
+  // Settings
+  settings    Json?
+
+  // Relations
+  teamMembers TeamMember[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+  @@index([type])
+  @@map("departments")
+}
+
+enum DepartmentType {
+  MANAGEMENT      // الإدارة
+  MARKETING       // التسويق
+  CREATIVE        // الإبداع
+  TECHNICAL       // التقني
+  ANALYTICS       // التحليلات
+  SALES           // المبيعات
+  SUPPORT         // الدعم
+  OPERATIONS      // العمليات
+}
+
+model TeamMember {
+  id            String   @id @default(cuid())
+  userId        String
+  departmentId  String
+
+  // Position Details
+  position      String
+  positionAr    String?
+  level         EmployeeLevel
+
+  // Employment
+  employmentType EmploymentType
+  startDate     DateTime
+  endDate       DateTime?
+
+  // Work Details
+  workload      Int      @default(100) // Percentage (0-100)
+  hourlyRate    Float?
+  salary        Float?
+
+  // Skills & Expertise
+  skills        Json?    // Array of skills
+  certifications Json?   // Array of certifications
+
+  // Performance
+  performance   Json?    // Performance metrics and reviews
+
+  // Status
+  status        TeamMemberStatus @default(ACTIVE)
+
+  // Relations
+  department    Department @relation(fields: [departmentId], references: [id])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, departmentId])
+  @@index([userId])
+  @@index([departmentId])
+  @@index([status])
+  @@map("team_members")
+}
+
+enum EmployeeLevel {
+  INTERN        // متدرب
+  JUNIOR        // مبتدئ
+  MID           // متوسط
+  SENIOR        // أول
+  LEAD          // قائد
+  MANAGER       // مدير
+  DIRECTOR      // مدير تنفيذي
+  C_LEVEL       // مستوى تنفيذي
+}
+
+enum EmploymentType {
+  FULL_TIME     // دوام كامل
+  PART_TIME     // دوام جزئي
+  CONTRACT      // عقد
+  FREELANCE     // مستقل
+  INTERN        // متدرب
+}
+
+enum TeamMemberStatus {
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+  TERMINATED
+}
+
+// ============================================
+// PERMISSIONS & ROLES
+// ============================================
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  category    PermissionCategory
+  resource    String   // e.g., "project", "campaign", "client"
+  action      PermissionAction // e.g., "create", "read", "update", "delete"
+
+  // Role Assignments
+  rolePermissions RolePermission[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([resource, action])
+  @@index([category])
+  @@map("permissions")
+}
+
+enum PermissionCategory {
+  ORGANIZATION  // إدارة المؤسسات
+  PROJECT       // إدارة المشاريع
+  CAMPAIGN      // إدارة الحملات
+  CONTENT       // إدارة المحتوى
+  FINANCIAL     // الإدارة المالية
+  TEAM          // إدارة الفريق
+  ANALYTICS     // التحليلات
+  SETTINGS      // الإعدادات
+  SYSTEM        // النظام
+}
+
+enum PermissionAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  APPROVE
+  PUBLISH
+  EXPORT
+  MANAGE
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  role         UserRole
+  permissionId String
+
+  // Constraints
+  conditions   Json?    // Optional conditions for permission
+
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
+  @@unique([role, permissionId])
+  @@index([role])
+  @@map("role_permissions")
+}
+
+// ============================================
+// APPROVAL WORKFLOWS
+// ============================================
+
+model ApprovalWorkflow {
+  id              String   @id @default(cuid())
+  name            String
+  nameAr          String?
+  type            ApprovalType
+  description     String?  @db.Text
+
+  // Workflow Configuration
+  stages          Json     // Array of approval stages
+  requiredApprovals Int    @default(1)
+  autoApproveAfter  Int?   // Hours after which to auto-approve
+
+  // Status
+  isActive        Boolean  @default(true)
+
+  // Relations
+  approvalRequests ApprovalRequest[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([type])
+  @@map("approval_workflows")
+}
+
+enum ApprovalType {
+  PROJECT_CREATION    // إنشاء مشروع
+  CAMPAIGN_LAUNCH     // إطلاق حملة
+  CONTENT_PUBLICATION // نشر محتوى
+  BUDGET_CHANGE       // تغيير الميزانية
+  CONTRACT_SIGNING    // توقيع عقد
+  INVOICE_ISSUANCE    // إصدار فاتورة
+  PROPOSAL_SUBMISSION // تقديم عرض
+  CUSTOM              // مخصص
+}
+
+model ApprovalRequest {
+  id          String   @id @default(cuid())
+  workflowId  String
+  entityType  String   // e.g., "project", "campaign", "content"
+  entityId    String
+
+  // Request Details
+  title       String
+  description String?  @db.Text
+  data        Json?    // Additional request data
+
+  // Status
+  status      ApprovalStatus @default(PENDING)
+  currentStage Int      @default(0)
+
+  // Requester
+  requesterId String
+
+  // Relations
+  workflow    ApprovalWorkflow @relation(fields: [workflowId], references: [id])
+  approvals   Approval[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  resolvedAt  DateTime?
+
+  @@index([workflowId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@map("approval_requests")
+}
+
+enum ApprovalStatus {
+  PENDING     // قيد الانتظار
+  IN_PROGRESS // قيد المراجعة
+  APPROVED    // تمت الموافقة
+  REJECTED    // مرفوض
+  CANCELLED   // ملغي
+  EXPIRED     // منتهي
+}
+
+model Approval {
+  id        String   @id @default(cuid())
+  requestId String
+  stage     Int
+
+  // Approver
+  approverId String
+  role       UserRole
+
+  // Decision
+  decision   ApprovalDecision?
+  comments   String?  @db.Text
+  decidedAt  DateTime?
+
+  // Relations
+  request    ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+
+  @@index([requestId])
+  @@index([approverId])
+  @@map("approvals")
+}
+
+enum ApprovalDecision {
+  APPROVED      // موافق
+  REJECTED      // مرفوض
+  NEEDS_CHANGES // يحتاج تعديلات
 }
